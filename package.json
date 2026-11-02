@@ -1,0 +1,13 @@
+{
+  "name": "b24-deals-funnel-dashboard",
+  "version": "1.0.0",
+  "description": "Дашборд воронки продаж для Битрикс24 на платформе Вайбкод",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node dev.mjs",
+    "test": "node --test \"test/*.test.js\""
+  }
+}

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Воронка продаж</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="head">
+      <div class="head__title">
+        <h1>Воронка продаж</h1>
+        <p class="muted" id="who">Загрузка…</p>
+      </div>
+      <button class="btn btn--ghost" id="refresh" type="button" title="Обновить данные">Обновить</button>
+    </header>
+
+    <form class="filters" id="filters" novalidate>
+      <label class="field">
+        <span>Воронка</span>
+        <select id="category" disabled></select>
+      </label>
+      <label class="field">
+        <span>Период создания сделки</span>
+        <select id="preset">
+          <option value="all" selected>За всё время</option>
+          <option value="month">Текущий месяц</option>
+          <option value="prev-month">Прошлый месяц</option>
+          <option value="30d">Последние 30 дней</option>
+          <option value="quarter">Текущий квартал</option>
+          <option value="year">Текущий год</option>
+          <option value="custom">Свой период…</option>
+        </select>
+      </label>
+      <div class="field field--dates" id="custom-dates" hidden>
+        <label><span>с</span><input type="date" id="from" min="2000-01-01" max="2100-12-31"></label>
+        <label><span>по</span><input type="date" id="to" min="2000-01-01" max="2100-12-31"></label>
+        <button class="btn" type="submit">Применить</button>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="mine">
+        <span>Только мои сделки</span>
+      </label>
+      <p class="filters__error" id="filter-error" role="alert" hidden></p>
+    </form>
+
+    <div id="notice" class="notice" role="status" hidden></div>
+
+    <section class="kpis" aria-label="Ключевые показатели">
+      <article class="kpi">
+        <h2>Открытые сделки</h2>
+        <p class="kpi__value" id="kpi-open-sum">—</p>
+        <p class="kpi__sub" id="kpi-open-count"></p>
+      </article>
+      <article class="kpi kpi--won">
+        <h2>Выиграно за период</h2>
+        <p class="kpi__value" id="kpi-won-count">—</p>
+        <p class="kpi__sub" id="kpi-won-sum"></p>
+      </article>
+      <article class="kpi">
+        <h2>Средний чек</h2>
+        <p class="kpi__value" id="kpi-avg">—</p>
+        <p class="kpi__sub">по выигранным сделкам</p>
+      </article>
+      <article class="kpi">
+        <h2>Конверсия в выигрыш</h2>
+        <p class="kpi__value" id="kpi-conv">—</p>
+        <p class="kpi__sub" id="kpi-total"></p>
+      </article>
+    </section>
+
+    <section class="card" aria-labelledby="funnel-title">
+      <div class="card__head">
+        <h2 id="funnel-title">Сводка по стадиям</h2>
+        <div class="seg" role="group" aria-label="Ширина полосы">
+          <button type="button" class="seg__btn is-active" data-bar="count">по количеству</button>
+          <button type="button" class="seg__btn" data-bar="sum">по сумме</button>
+        </div>
+      </div>
+      <div id="funnel" class="funnel"></div>
+    </section>
+
+    <section class="card" aria-labelledby="recent-title">
+      <div class="card__head">
+        <h2 id="recent-title">Последние сделки</h2>
+        <label class="field field--inline">
+          <span>Показать</span>
+          <select id="limit">
+            <option value="10">10</option>
+            <option value="20" selected>20</option>
+          </select>
+        </label>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>Сделка</th><th class="num">Сумма</th><th>Стадия</th><th>Ответственный</th><th>Создана</th></tr>
+          </thead>
+          <tbody id="recent"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="foot muted" id="foot"></footer>
+  </div>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
