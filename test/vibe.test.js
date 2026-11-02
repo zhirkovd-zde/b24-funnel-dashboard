@@ -98,6 +98,12 @@ test('понятные сообщения для ожидаемых кодов',
   }
   const unknown = describeError(new VibeError(500, 'WEIRD'));
   assert.equal(unknown.status, 502);
-  const generic = describeError(new Error('boom'));
-  assert.equal(generic.code, 'UNKNOWN');
+  const generic = describeError(Object.assign(new Error('boom'), { code: 'ENOENT' }));
+  assert.deepEqual([generic.status, generic.code], [500, 'INTERNAL']);
+});
+
+test('незнакомый код — сообщение по HTTP-статусу', () => {
+  assert.equal(describeError(new VibeError(401, 'UNAUTHORIZED')).message, describeError(new VibeError(401, 'INVALID_SESSION')).message);
+  assert.equal(describeError(new VibeError(403, 'FORBIDDEN_X')).status, 403);
+  assert.equal(describeError(new VibeError(429, 'TOO_MANY_REQUESTS')).message, describeError(new VibeError(429, 'RATE_LIMITED')).message);
 });

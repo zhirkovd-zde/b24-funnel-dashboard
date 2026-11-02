@@ -31,6 +31,18 @@ const DESCRIPTION = 'Дашборд по сделкам CRM: сводка по �
 const API_KEY = process.env.VIBE_API_KEY || '';
 const APP_KEY = process.env.VIBE_APP_KEY || '';
 
+// Весь вывод скрипта проходит через маску: ключи и токены сессий
+// не попадут в консоль, даже если платформа вернёт их в тексте ошибки или журнале.
+function redact(s) {
+  let out = String(s).replace(/vibe_(?:app|api|live|session)_[A-Za-z0-9_.-]+/g, '[REDACTED]');
+  for (const k of [API_KEY, APP_KEY]) if (k) out = out.split(k).join('[REDACTED]');
+  return out;
+}
+for (const m of ['log', 'error', 'warn']) {
+  const orig = console[m].bind(console);
+  console[m] = (...args) => orig(...args.map((a) => redact(typeof a === 'string' ? a : JSON.stringify(a))));
+}
+
 function fail(msg) { console.error(`✖ ${msg}`); process.exit(1); }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -154,6 +166,11 @@ function packSource() {
 }
 
 async function deploy() {
+  // Без ключа приложения выкладка оставит сервер без VIBE_APP_KEY в env.
+  // Пропустить можно только явно — если ключ задан секретом в карточке приложения.
+  if (!APP_KEY && process.env.SKIP_APP_KEY !== '1') {
+    fail('Нет VIBE_APP_KEY: запустите . .\\deploy\\set-keys.ps1 или, если ключ задан секретом в карточке приложения, SKIP_APP_KEY=1.');
+  }
   const server = await waitReady(await findOrCreateServer());
   const archive = packSource();
   console.log(`Выкладываю ${Math.round(archive.length / 1024)} КБ на сервер ${server.id}…`);

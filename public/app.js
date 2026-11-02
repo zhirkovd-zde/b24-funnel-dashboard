@@ -95,7 +95,7 @@ async function api(path, signal) {
   try { body = await res.json(); } catch { /* не JSON */ }
   if (!res.ok) {
     const msg = body?.error?.message || `Сервер ответил ошибкой ${res.status}`;
-    throw Object.assign(new Error(msg), { code: body?.error?.code, requestId: body?.error?.requestId });
+    throw Object.assign(new Error(msg), { code: body?.error?.code, status: res.status, requestId: body?.error?.requestId });
   }
   return body;
 }
@@ -129,8 +129,24 @@ function renderKpis(d) {
   $('kpi-won-sum').textContent = k.wonSum == null ? 'сумма недоступна' : `на ${money(k.wonSum)}`;
   $('kpi-avg').textContent = k.avgCheck == null ? '—' : money(k.avgCheck);
   $('kpi-conv').textContent = k.conversion == null ? '—' : `${k.conversion.toLocaleString('ru-RU')} %`;
-  $('kpi-total').textContent = `${deals(k.totalCount)} создано ${periodText(d.period)}`;
+  $('kpi-total').textContent = `закрыто ${int(k.wonCount + k.lostCount)} из ${deals(k.totalCount)} ${periodText(d.period)}`;
 }
+
+// После ошибки не оставляем на экране цифры от прежних фильтров.
+function clearView() {
+  state.data = null;
+  for (const id of ['kpi-open-sum', 'kpi-won-count', 'kpi-avg', 'kpi-conv']) $(id).textContent = '—';
+  for (const id of ['kpi-open-count', 'kpi-won-sum', 'kpi-total']) $(id).textContent = '';
+  $('funnel').replaceChildren(el('p', 'empty', 'Нет данных.'));
+  const tr = el('tr');
+  const td = el('td', 'empty', 'Нет данных.');
+  td.colSpan = 5;
+  tr.append(td);
+  $('recent').replaceChildren(tr);
+  $('foot').textContent = '';
+}
+
+const canRetry = (e) => e.code !== 'NO_SESSION' && e.status !== 401;
 
 function stageRow(s, max) {
   const row = el('div', `stage stage--${s.kind}`);
@@ -160,12 +176,15 @@ function renderFunnel(d) {
   const head = el('div', 'stage stage--head');
   head.append(el('div', null, 'Стадия'), el('div'), el('div', 'num', 'Сделок'), el('div', 'num', 'Сумма'));
   box.append(head);
-  const open = d.stages.filter((s) => s.kind === 'open');
-  const closed = d.stages.filter((s) => s.kind !== 'open');
-  open.forEach((s) => box.append(stageRow(s, max)));
-  if (closed.length) {
-    box.append(el('div', 'stage__sep', 'Завершённые'));
-    closed.forEach((s) => box.append(stageRow(s, max)));
+  const groups = [
+    [null, d.stages.filter((s) => s.kind === 'open')],
+    ['Завершённые', d.stages.filter((s) => s.kind === 'won' || s.kind === 'lost')],
+    ['Вне справочника стадий', d.stages.filter((s) => s.kind === 'unknown')],
+  ];
+  for (const [title, list] of groups) {
+    if (!list.length) continue;
+    if (title) box.append(el('div', 'stage__sep', title));
+    list.forEach((s) => box.append(stageRow(s, max)));
   }
   if (d.kpi.totalCount === 0) box.append(el('p', 'empty', `Сделок ${periodText(d.period)} нет — попробуйте другой период или воронку.`));
 }
@@ -211,7 +230,7 @@ function render(d) {
   renderRecent(d);
   const warn = (d.warnings || []).map((w) => w.message).join(' ');
   showNotice('warn', warn);
-  $('foot').textContent = `Данные Битрикс24 на ${new Date(d.generatedAt).toLocaleString('ru-RU')}. Суммы — в валюте сделок без пересчёта курсов.`;
+  $('foot').textContent = `Данные Битрикс24 на ${new Date(d.generatedAt).toLocaleString('ru-RU')}. Итоги складываются без пересчёта курсов валют.`;
 }
 
 // ---------- фильтры ----------
@@ -249,7 +268,8 @@ async function load() {
     render(d);
   } catch (e) {
     if (e.name === 'AbortError' || seq !== state.seq) return;
-    showNotice('error', e.message, e.code === 'NO_SESSION' ? null : load);
+    clearView();
+    showNotice('error', e.message, canRetry(e) ? load : null);
   } finally {
     if (seq === state.seq) setLoading(false);
   }
@@ -315,7 +335,8 @@ async function init() {
   } catch (e) {
     setLoading(false);
     $('who').textContent = '';
-    showNotice('error', e.message, e.code === 'NO_SESSION' ? null : () => location.reload());
+    clearView();
+    showNotice('error', e.message, canRetry(e) ? () => location.reload() : null);
     return;
   }
   await load();

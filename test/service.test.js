@@ -88,3 +88,25 @@ test('сессия без пользователя портала — INVALID_SE
   const client = { ...createMockClient(), me: async () => ({ success: true, data: { portal: 'x.bitrix24.ru', currentUser: null } }) };
   await assert.rejects(svc.bootstrap(client, 'tok'), { code: 'INVALID_SESSION' });
 });
+
+test('пустой справочник стадий не кэшируется и даёт предупреждение', async () => {
+  const svc = createService();
+  const base = createMockClient();
+  let empty = true;
+  const client = { ...base, batch: async (calls) => {
+    const r = await base.batch(calls);
+    if (empty && r.data.results.stages) r.data.results.stages = [];
+    return r;
+  } };
+  const d1 = await svc.dashboard(client, 'tok', query());
+  assert.ok(d1.warnings.some((w) => w.code === 'NO_STAGES'));
+  empty = false;
+  const d2 = await svc.dashboard(client, 'tok', query());
+  assert.ok(d2.stages.some((s) => s.name === 'Новая'), 'со второй попытки справочник получен');
+});
+
+test('сессия без домена портала — INVALID_SESSION, кэш не общий', async () => {
+  const svc = createService();
+  const client = { ...createMockClient(), me: async () => ({ success: true, data: { portal: null, currentUser: { bitrixUserId: '1' } } }) };
+  await assert.rejects(svc.dashboard(client, 'tok', query()), { code: 'INVALID_SESSION' });
+});

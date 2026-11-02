@@ -17,6 +17,10 @@ const APP_KEY = process.env.VIBE_APP_KEY || '';
 const API_BASE = process.env.VIBE_API_BASE || 'https://vibecode.bitrix24.tech/v1';
 // Имитация данных — только для локальной разработки, в production выключена всегда.
 const MOCK = process.env.MOCK === '1' && process.env.NODE_ENV !== 'production';
+if (MOCK && APP_KEY) {
+  console.error('MOCK=1 вместе с VIBE_APP_KEY — отказ запуска: имитация не должна работать рядом с настоящим ключом.');
+  process.exit(1);
+}
 
 const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
@@ -112,7 +116,8 @@ const server = createServer(async (req, res) => {
   let pathname = '/';
   res.on('finish', () => log(req, res, pathname, started, requestId));
   try {
-    const url = new URL(req.url, 'http://localhost');
+    let url;
+    try { url = new URL(req.url, 'http://localhost'); } catch { return send(res, 400, 'Bad request'); }
     pathname = url.pathname;
     if (pathname === '/health') return send(res, 200, 'ok');
     if (pathname.startsWith('/api/')) {

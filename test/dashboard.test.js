@@ -74,8 +74,13 @@ test('сводка: стадии, показатели, средний чек, �
   assert.equal(rows.length, 4);
   assert.deepEqual(kpi, {
     totalCount: 10, totalSum: 2500.5, openCount: 6, openSum: 1500.5, wonCount: 3, wonSum: 900,
-    lostCount: 1, avgCheck: 300, conversion: 30,
+    lostCount: 1, avgCheck: 300, conversion: 75,
   });
+});
+
+test('стадии в полях Битрикс24 (STATUS_ID, NAME, SORT)', () => {
+  const s = normalizeStages([{ STATUS_ID: 'WON', NAME: 'Успех', SORT: '20', SEMANTICS: 'S' }, { STATUS_ID: 'NEW', NAME: 'Новая', SORT: '10' }]);
+  assert.deepEqual(s.map((x) => [x.stageId, x.name, x.kind]), [['NEW', 'Новая', 'open'], ['WON', 'Успех', 'won']]);
 });
 
 test('сводка: пустые данные — нули, без деления на ноль', () => {
