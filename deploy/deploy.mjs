@@ -252,6 +252,18 @@ async function uploadIcon(serverId) {
   }
 }
 
+// Удалить лишний сервер по id: node deploy/deploy.mjs delete <id>.
+// Рабочий сервер (имя с -vm) удалить этой командой нельзя.
+async function deleteServer() {
+  const id = process.argv[3];
+  if (!id || !/^[0-9a-f-]{36}$/.test(id)) fail('Укажите id сервера: node deploy/deploy.mjs delete <id>');
+  const s = (await must('GET', `/infra/servers/${id}`)).data ?? {};
+  console.log(`Сервер ${s.id}: имя ${s.name}, вид ${s.kind}, статус ${s.status}`);
+  if (s.name === 'b24-funnel-dashboard-vm') fail('Это рабочий сервер дашборда — не удаляю.');
+  await must('DELETE', `/infra/servers/${id}`);
+  console.log('Удалён.');
+}
+
 async function icon() {
   await uploadIcon((await findServer()).id);
 }
@@ -289,6 +301,6 @@ async function status() {
 }
 
 const cmd = process.argv[2];
-const commands = { check, deploy, publish, status, icon };
+const commands = { check, deploy, publish, status, icon, delete: deleteServer };
 if (!commands[cmd]) fail(`Команда: ${Object.keys(commands).join(' | ')}`);
 await commands[cmd]();
