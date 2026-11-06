@@ -13,6 +13,8 @@
 //   node deploy/deploy.mjs deploy   — найти или создать сервер, выложить код, задать appUrl приложению
 //   node deploy/deploy.mjs publish  — опубликовать приложение для сотрудников портала
 //   node deploy/deploy.mjs status   — состояние сервера и последние строки журнала
+//   node deploy/deploy.mjs icon     — загрузить public/icon.svg как иконку каталога
+// Отдельная машина вместо галактики: $env:DEDICATED = '1' перед командой.
 
 import { request as httpsRequest } from 'node:https';
 import { execFileSync } from 'node:child_process';
@@ -23,7 +25,10 @@ import { fileURLToPath } from 'node:url';
 
 const BASE = 'https://vibecode.bitrix24.tech/v1';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SERVER_NAME = 'b24-funnel-dashboard';
+// DEDICATED=1 — отдельная виртуальная машина вместо приложения в галактике
+// (нужна, если склад образов галактики недоступен или приложению тесно).
+const DEDICATED = process.env.DEDICATED === '1';
+const SERVER_NAME = DEDICATED ? 'b24-funnel-dashboard-vm' : 'b24-funnel-dashboard';
 const APP_FILES = ['server.js', 'package.json', 'lib', 'public'];
 const DISPLAY_NAME = 'Воронка продаж';
 const DESCRIPTION = 'Дашборд по сделкам CRM: сводка по стадиям, открытые и выигранные сделки, средний чек, последние сделки, фильтр по периоду. Данные — с правами текущего сотрудника.';
@@ -117,7 +122,7 @@ async function findOrCreateServer() {
   if (existing) { console.log(`Сервер найден: ${existing.id} (${existing.status})`); return existing; }
 
   const me = (await must('GET', '/me')).data ?? {};
-  const reuse = me.deployment?.standalone?.reuseTarget?.serverId;
+  const reuse = DEDICATED ? null : me.deployment?.standalone?.reuseTarget?.serverId;
   if (reuse) { console.log(`Платформа предлагает существующий сервер ${reuse}`); return (await must('GET', `/infra/servers/${reuse}`)).data; }
   const cap = me.capabilities?.servers?.create;
   if (cap && !cap.available) fail(`Платформа не даёт создать сервер: ${cap.reason ?? ''} ${cap.userMessage ?? ''}`);
@@ -133,7 +138,7 @@ async function findOrCreateServer() {
 
   console.log(`Создаю сервер ${SERVER_NAME}: ${plan.id}, ${region.id}, образ ${image.id}`);
   const created = (await must('POST', '/infra/servers', {
-    body: { provider, name: SERVER_NAME, plan: plan.id, region: region.id, image: image.id },
+    body: { provider, name: SERVER_NAME, plan: plan.id, region: region.id, image: image.id, ...(DEDICATED ? { placement: 'dedicated' } : {}) },
   })).data;
   return created;
 }
@@ -173,8 +178,23 @@ async function deploy() {
   }
   const server = await waitReady(await findOrCreateServer());
   const archive = packSource();
-  console.log(`Выкладываю ${Math.round(archive.length / 1024)} КБ на сервер ${server.id}…`);
-  const r = await call('POST', `/infra/servers/${server.id}/deploy`, {
+  // Временные сбои платформы (реестр образов, занятый слот) — повтор через паузу.
+  const TRANSIENT = new Set(['GALAXY_BASE_IMAGE_UNAVAILABLE', 'GALAXY_UPLOAD_BUSY', 'DEPLOY_BACKEND_BUSY', 'DOWNLOAD_RELAY_BUSY', 'EXEC_BUSY', 'WAKE_TIMEOUT']);
+  let r;
+  for (let attempt = 1; ; attempt++) {
+    console.log(`Выкладываю ${Math.round(archive.length / 1024)} КБ на сервер ${server.id} (${server.kind ?? '?'}), попытка ${attempt}…`);
+    r = await sendDeploy(server, archive);
+    const code = r.json?.error?.code;
+    if (!(TRANSIENT.has(code) || r.json?.error?.retryable) || attempt >= 6) break;
+    const wait = Math.max(Number(r.json?.error?.retryAfter) || 0, 120);
+    console.log(`  временный сбой ${code}: повтор через ${wait} с`);
+    await sleep(wait * 1000);
+  }
+  await printDeployResult(r, server);
+}
+
+function sendDeploy(server, archive) {
+  return call('POST', `/infra/servers/${server.id}/deploy`, {
     timeoutMs: 15 * 60_000,
     body: {
       source: { content: archive.toString('base64') },
@@ -191,6 +211,9 @@ async function deploy() {
       ...(process.env.BASE_VERSION ? { baseVersionId: process.env.BASE_VERSION } : {}),
     },
   });
+}
+
+async function printDeployResult(r, server) {
   const d = r.json?.data ?? {};
   for (const s of d.steps ?? []) console.log(`  ${s.status === 'ok' ? '✓' : s.status === 'warning' ? '!' : '✖'} ${s.step ?? s.name}${s.status !== 'ok' && s.stdout ? ` — ${String(s.stdout).slice(-300)}` : ''}`);
   for (const w of d.warnings ?? r.json?.warnings ?? []) console.log(`  предупреждение: ${typeof w === 'string' ? w : (w.message ?? JSON.stringify(w))}`);
@@ -209,6 +232,36 @@ async function deploy() {
     await must('PATCH', `/apps/${encodeURIComponent(appId)}`, { body: { appUrl } });
     console.log(`Адрес задан OAuth-приложению ${appId}.`);
   }
+  await uploadIcon(server.id);
+}
+
+// Иконка каталога Битрикс24 и вкладки браузера — public/icon.svg.
+async function uploadIcon(serverId) {
+  const svg = readFileSync(join(ROOT, 'public', 'icon.svg'));
+  const form = new FormData();
+  form.append('file', new Blob([svg], { type: 'image/svg+xml' }), 'icon.svg');
+  const res = await fetch(`${BASE}/infra/servers/${encodeURIComponent(serverId)}/icon`, {
+    method: 'POST', headers: { 'X-Api-Key': API_KEY }, body: form, redirect: 'error',
+  });
+  let json = null;
+  try { json = await res.json(); } catch { /* не JSON */ }
+  if (!res.ok || json?.success === false) {
+    console.log(`  иконка не загружена: ${res.status} ${json?.error?.code ?? ''} ${json?.error?.message ?? ''}`);
+  } else {
+    console.log('Иконка загружена.');
+  }
+}
+
+async function icon() {
+  await uploadIcon((await findServer()).id);
+}
+
+async function findServer() {
+  if (process.env.SERVER_ID) return (await must('GET', `/infra/servers/${encodeURIComponent(process.env.SERVER_ID)}`)).data;
+  const list = (await must('GET', '/infra/servers')).data ?? [];
+  const s = (Array.isArray(list) ? list : list.items ?? []).find((x) => x.name === SERVER_NAME && x.status !== 'deleted');
+  if (!s) fail(`Сервер ${SERVER_NAME} не найден.`);
+  return s;
 }
 
 async function appIdFromKey() {
@@ -228,9 +281,7 @@ async function publish() {
 }
 
 async function status() {
-  const list = (await must('GET', '/infra/servers')).data ?? [];
-  const s = (Array.isArray(list) ? list : list.items ?? []).find((x) => x.name === SERVER_NAME);
-  if (!s) fail(`Сервер ${SERVER_NAME} не найден.`);
+  const s = await findServer();
   console.log(`Сервер ${s.id}: status=${s.status}, туннель=${s.blackholeStatus}, адрес=${s.appUrl ?? s.subdomain ?? '?'}`);
   const logs = await call('GET', `/infra/servers/${s.id}/logs?lines=30`);
   const lines = logs.json?.data?.lines ?? logs.json?.data?.logs ?? logs.json?.data;
@@ -238,6 +289,6 @@ async function status() {
 }
 
 const cmd = process.argv[2];
-const commands = { check, deploy, publish, status };
+const commands = { check, deploy, publish, status, icon };
 if (!commands[cmd]) fail(`Команда: ${Object.keys(commands).join(' | ')}`);
 await commands[cmd]();
