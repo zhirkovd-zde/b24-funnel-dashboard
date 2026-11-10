@@ -31,7 +31,7 @@
 
 Для выкладки — **отдельный** личный ключ `vibe_api_` с единственным скоупом `vibe:infra` (сервер и выкладка), сроком 30 дней. Данных Битрикс24 он не читает.
 
-Фактические наборы сверены через `GET /v1/me` (`node deploy/deploy.mjs check`): у ключа приложения — `crm, user, placement`, тип `oauth_app`; у ключа выкладки — `vibe:infra`, тип `personal`.
+Фактические наборы сверены через `GET /v1/me` (`node deploy/deploy.mjs me`, срез — [docs/v1-me.json](docs/v1-me.json)): ключ приложения — тип `oauth_app`, `accessMode: READONLY`, скоупы `crm, user, placement`; ключ выкладки — тип `personal`, скоуп `vibe:infra`.
 
 ## Как устроена безопасность
 

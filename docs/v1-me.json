@@ -1,0 +1,17 @@
+{
+  "_note": "Обезличенный срез GET /v1/me (node deploy/deploy.mjs me): без ключей, токенов, портала и сведений о пользователе. currentUser = null — запрос сделан ключом без сессии пользователя.",
+  "capturedAt": "2026-11-10T15:05:05.481Z",
+  "appKey": {
+    "type": "oauth_app",
+    "accessMode": "READONLY",
+    "scopes": ["crm", "user", "placement"],
+    "app": { "title": "Воронка продаж" },
+    "currentUser": null
+  },
+  "deployKey": {
+    "type": "personal",
+    "accessMode": "READWRITE",
+    "scopes": ["vibe:infra"],
+    "currentUser": null
+  }
+}
