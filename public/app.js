@@ -123,6 +123,14 @@ function setLoading(on) {
 
 function renderKpis(d) {
   const k = d.kpi;
+  if (k.classified === false) {
+    // Стадии не классифицированы — честный прочерк вместо нулей.
+    const why = 'нет данных о стадиях';
+    for (const id of ['kpi-open-sum', 'kpi-won-count', 'kpi-avg', 'kpi-conv']) $(id).textContent = '—';
+    for (const id of ['kpi-open-count', 'kpi-won-sum']) $(id).textContent = why;
+    $('kpi-total').textContent = `${why}; всего ${deals(k.totalCount)} ${periodText(d.period)}`;
+    return;
+  }
   $('kpi-open-sum').textContent = money(k.openSum);
   $('kpi-open-count').textContent = `${deals(k.openCount)} в работе`;
   $('kpi-won-count').textContent = int(k.wonCount);

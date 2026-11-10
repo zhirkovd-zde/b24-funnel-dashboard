@@ -14,7 +14,9 @@
 //   node deploy/deploy.mjs publish  — опубликовать приложение для сотрудников портала
 //   node deploy/deploy.mjs status   — состояние сервера и последние строки журнала
 //   node deploy/deploy.mjs icon     — загрузить public/icon.svg как иконку каталога
-// Отдельная машина вместо галактики: $env:DEDICATED = '1' перед командой.
+//   node deploy/deploy.mjs me       — обезличенный /v1/me: тип, accessMode, скоупы
+//   node deploy/deploy.mjs grant <ID> "<Имя>" — доступ одному сотруднику (NAMED_USERS)
+// Приложение в галактике вместо отдельной машины: $env:GALAXY = '1' перед командой.
 
 import { request as httpsRequest } from 'node:https';
 import { execFileSync } from 'node:child_process';
@@ -25,9 +27,10 @@ import { fileURLToPath } from 'node:url';
 
 const BASE = 'https://vibecode.bitrix24.tech/v1';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-// DEDICATED=1 — отдельная виртуальная машина вместо приложения в галактике
-// (нужна, если склад образов галактики недоступен или приложению тесно).
-const DEDICATED = process.env.DEDICATED === '1';
+// По умолчанию — отдельная виртуальная машина (рабочая конфигурация).
+// GALAXY=1 — приложение в галактике (дешевле, но 06.11.2026 её склад образов
+// был недоступен часами).
+const DEDICATED = process.env.GALAXY !== '1';
 const SERVER_NAME = DEDICATED ? 'b24-funnel-dashboard-vm' : 'b24-funnel-dashboard';
 const APP_FILES = ['server.js', 'package.json', 'lib', 'public'];
 const DISPLAY_NAME = 'Воронка продаж';
@@ -112,6 +115,40 @@ async function check() {
   if (API_KEY) describeMe('Ключ инфраструктуры (VIBE_API_KEY)', await must('GET', '/me'));
   if (APP_KEY) describeMe('Ключ приложения (VIBE_APP_KEY)', await must('GET', '/me', { key: APP_KEY }));
   if (!API_KEY && !APP_KEY) fail('Нет ни VIBE_API_KEY, ни VIBE_APP_KEY в окружении.');
+}
+
+// Обезличенный срез /v1/me для проверяющего: только тип, режим, скоупы и
+// приложение — без ключей, токенов, портала и сведений о пользователе.
+function meSummary(d = {}) {
+  return {
+    type: d.type ?? null,
+    accessMode: d.accessMode ?? null,
+    scopes: d.scopes ?? [],
+    ...(d.app ? { app: { title: d.app.title ?? null } } : {}),
+    currentUser: d.currentUser ? 'present' : null,
+  };
+}
+
+async function me() {
+  const out = {};
+  if (APP_KEY) out.appKey = meSummary((await must('GET', '/me', { key: APP_KEY })).data);
+  if (API_KEY) out.deployKey = meSummary((await must('GET', '/me')).data);
+  if (!Object.keys(out).length) fail('Нет ни VIBE_API_KEY, ни VIBE_APP_KEY в окружении.');
+  console.log(JSON.stringify({ capturedAt: new Date().toISOString(), ...out }, null, 2));
+}
+
+// Доступ к приложению одному сотруднику портала: политика NAMED_USERS
+// (только люди из списка) + запись в список. Портал целиком не открывается.
+//   node deploy/deploy.mjs grant <ID сотрудника в Битрикс24> "<Имя Фамилия>"
+async function grant() {
+  const userId = process.argv[3];
+  const userName = process.argv[4] || `Сотрудник ${userId}`;
+  if (!/^\d+$/.test(userId ?? '')) fail('Укажите числовой ID сотрудника: node deploy/deploy.mjs grant 25 "Имя Фамилия"');
+  const s = await findServer();
+  await must('POST', `/infra/servers/${s.id}/access`, { body: { type: 'user', userId, userName } });
+  await must('PATCH', `/infra/servers/${s.id}/access-policy`, { body: { accessPolicy: 'NAMED_USERS' } });
+  const list = (await must('GET', `/infra/servers/${s.id}/access`)).data ?? [];
+  console.log(`Политика: NAMED_USERS. Список доступа: ${(Array.isArray(list) ? list : list.items ?? []).map((x) => `${x.userName ?? x.name ?? ''} (${x.userId ?? x.departmentId ?? '?'})`).join(', ')}`);
 }
 
 async function findOrCreateServer() {
@@ -301,6 +338,6 @@ async function status() {
 }
 
 const cmd = process.argv[2];
-const commands = { check, deploy, publish, status, icon, delete: deleteServer };
+const commands = { check, deploy, publish, status, icon, me, grant, delete: deleteServer };
 if (!commands[cmd]) fail(`Команда: ${Object.keys(commands).join(' | ')}`);
 await commands[cmd]();

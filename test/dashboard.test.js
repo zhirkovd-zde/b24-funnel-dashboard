@@ -74,7 +74,7 @@ test('сводка: стадии, показатели, средний чек, �
   assert.equal(rows.length, 4);
   assert.deepEqual(kpi, {
     totalCount: 10, totalSum: 2500.5, openCount: 6, openSum: 1500.5, wonCount: 3, wonSum: 900,
-    lostCount: 1, avgCheck: 300, conversion: 75,
+    lostCount: 1, avgCheck: 300, conversion: 75, unknownCount: 0, classified: true,
   });
 });
 
@@ -93,12 +93,32 @@ test('сводка: пустые данные — нули, без делени�
   assert.deepEqual(none.stages, []);
 });
 
-test('сводка: удалённая стадия — отдельной строкой, не в «открытых»', () => {
-  const { stages: rows, kpi } = buildSummary(normalizeStages(STATUSES), { groups: [{ stageId: 'OLD', count: 5, aggregates: { amount: { sum: 50 } } }] });
-  const old = rows.find((r) => r.stageId === 'OLD');
-  assert.equal(old.kind, 'unknown');
-  assert.equal(kpi.openCount, 0);
-  assert.equal(kpi.totalCount, 5);
+test('сводка: стадия вне справочника — строка по коду, показатели недоступны, а не ноль', () => {
+  const { stages: rows, kpi } = buildSummary(normalizeStages(STATUSES), { groups: [
+    { stageId: 'NEW', count: 3, aggregates: { amount: { sum: 30 } } },
+    { stageId: 'WON', count: 2, aggregates: { amount: { sum: 20 } } },
+    { stageId: 'OLD', count: 5, aggregates: { amount: { sum: 50 } } },
+  ] });
+  assert.equal(rows.find((r) => r.stageId === 'OLD').kind, 'unknown');
+  assert.equal(kpi.classified, false);
+  assert.equal(kpi.unknownCount, 5);
+  for (const k of ['openCount', 'openSum', 'wonCount', 'wonSum', 'lostCount', 'avgCheck', 'conversion']) assert.equal(kpi[k], null, k);
+  assert.equal(kpi.totalCount, 10, 'общее количество известно и показывается');
+  assert.equal(kpi.totalSum, 100);
+});
+
+test('сводка: справочник стадий пуст, сделки есть — показатели недоступны', () => {
+  const { stages: rows, kpi } = buildSummary([], { groups: [{ stageId: 'NEW', count: 4, aggregates: { amount: { sum: 40 } } }] });
+  assert.equal(rows.length, 1);
+  assert.equal(kpi.classified, false);
+  assert.equal(kpi.openCount, null);
+  assert.equal(kpi.wonCount, null);
+});
+
+test('сводка: стадия вне справочника без сделок не мешает расчёту', () => {
+  const { kpi } = buildSummary(normalizeStages(STATUSES), { groups: [{ stageId: 'NEW', count: 1, aggregates: { amount: { sum: 10 } } }] });
+  assert.equal(kpi.classified, true);
+  assert.equal(kpi.openCount, 1);
 });
 
 test('сводка без сумм (выборка больше лимита платформы)', () => {
